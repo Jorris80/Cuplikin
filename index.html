@@ -252,6 +252,25 @@ svg.i.s{width:15px;height:15px}svg.i.l{width:22px;height:22px}
   .card{padding:14px}
 }
 @media (max-width:520px){.g6{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.g6 .kpi .l{font-size:11px}.g6 .kpi .xs{display:none}}
+/* foto profil & zoom */
+.avatar.img{padding:0;overflow:hidden;background:var(--panel2)}
+.avatar.img img{width:100%;height:100%;object-fit:cover;display:block}
+.avatar.zoomable{cursor:zoom-in;outline-offset:2px}.avatar.zoomable:hover,.avatar.zoomable:focus-visible{outline:2px solid var(--ac)}
+.zoom-bg{position:fixed;inset:0;z-index:150;background:#050507;display:flex;flex-direction:column;animation:fi .15s;color:#fff}
+.zoom-top{display:flex;align-items:center;gap:6px;padding:calc(10px + var(--sat)) 12px 10px}
+.zoom-top .btn{color:#fff;font-size:18px}.zoom-top .btn:hover{background:rgba(255,255,255,.12)}
+.zoom-stage{flex:1;display:grid;place-items:center;overflow:hidden;touch-action:none;position:relative;cursor:zoom-in}
+.zoom-stage img{max-width:min(92vw,900px);max-height:78vh;border-radius:12px;user-select:none;-webkit-user-drag:none;will-change:transform;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+.zoom-hint{text-align:center;color:#a1a1aa;padding:8px 12px calc(12px + var(--sab))}
+.crop-wrap{position:relative;width:min(320px,80vw);aspect-ratio:1;margin:0 auto 12px;touch-action:none}
+.crop-wrap canvas{width:100%;height:100%;border-radius:14px;cursor:grab;display:block;background:#000}
+.crop-ring{position:absolute;inset:0;border-radius:50%;box-shadow:0 0 0 999px rgba(0,0,0,.45);pointer-events:none;border:2px solid rgba(255,255,255,.85)}
+.crop-wrap{overflow:hidden;border-radius:14px}
+/* dokumen legal */
+.legal-page{max-width:900px;margin:0 auto;padding:24px}
+.legal h1{font-size:22px;margin-top:0}.legal h2{font-size:16px;margin-top:22px;color:var(--ac)}
+.legal li{margin:4px 0}.md-tbl{font-size:13px;margin:8px 0 12px}.md-tbl td,.md-tbl th{vertical-align:top}
+@media (max-width:640px){.legal-page{padding:16px}.md-tbl{font-size:12px}}
 
 </style>
 </head>
@@ -330,8 +349,17 @@ function copyText(t) { (navigator.clipboard ? navigator.clipboard.writeText(t) :
 function md(src) {
   var lines = String(src || '').replace(/\r/g, '').split('\n'), out = [], inList = '';
   var inline = function (s) { return esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\*(.+?)\*/g, '<i>$1</i>').replace(/`(.+?)`/g, '<code>$1</code>'); };
+  var tbl = null;
+  var flushTbl = function () { if (tbl) { out.push('<div class="tbl-wrap"><table class="tbl md-tbl"><thead><tr>' + tbl[0].map(function (c) { return '<th>' + inline(c) + '</th>'; }).join('') + '</tr></thead><tbody>' + tbl.slice(1).map(function (r) { return '<tr>' + r.map(function (c) { return '<td>' + inline(c) + '</td>'; }).join('') + '</tr>'; }).join('') + '</tbody></table></div>'); tbl = null; } };
   lines.forEach(function (l) {
     var m;
+    if (/^\s*\|.*\|\s*$/.test(l)) {
+      if (inList) { out.push('</' + inList + '>'); inList = ''; }
+      if (/^\s*\|[\s\-:|]+\|\s*$/.test(l)) return;
+      (tbl = tbl || []).push(l.trim().replace(/^\||\|$/g, '').split('|').map(function (c) { return c.trim(); }));
+      return;
+    }
+    flushTbl();
     if ((m = l.match(/^\s*[-*]\s+(.*)/))) { if (inList !== 'ul') { if (inList) out.push('</' + inList + '>'); out.push('<ul>'); inList = 'ul'; } out.push('<li>' + inline(m[1]) + '</li>'); return; }
     if ((m = l.match(/^\s*\d+[.)]\s+(.*)/))) { if (inList !== 'ol') { if (inList) out.push('</' + inList + '>'); out.push('<ol>'); inList = 'ol'; } out.push('<li>' + inline(m[1]) + '</li>'); return; }
     if (inList) { out.push('</' + inList + '>'); inList = ''; }
@@ -339,6 +367,7 @@ function md(src) {
     else if ((m = l.match(/^>\s?(.*)/))) out.push('<blockquote>' + inline(m[1]) + '</blockquote>');
     else if (l.trim()) out.push('<p>' + inline(l) + '</p>');
   });
+  flushTbl();
   if (inList) out.push('</' + inList + '>');
   return out.join('');
 }
@@ -414,6 +443,7 @@ function call(action, payload, opt) {
       var e = new Error(res.error.message); e.code = res.error.code; e.status = res.error.status;
       if (e.status === 401 && action !== 'auth.login') { logoutLocal(); }
       if (e.code === 'MUST_CHANGE_PASSWORD') { S.boot && (S.boot.user.mustChange = true); renderChangePw(); }
+      if (e.code === 'LEGAL_REQUIRED') renderLegalGate();
       throw e;
     }
     if (READ_CACHE.indexOf(action) >= 0) Store.set(cacheKey(action, payload), { at: Date.now(), data: res.data });
@@ -617,7 +647,8 @@ var NAV = [
   { id: 'license', label: 'Lisensi & Paket', icon: 'key' },
   { id: 'settings', label: 'Pengaturan', icon: 'settings' },
   { id: 'system', label: 'Kesehatan Sistem', icon: 'cpu', perm: 'organization.manage' },
-  { id: 'help', label: 'Panduan', icon: 'book' }
+  { id: 'help', label: 'Panduan', icon: 'book' },
+  { id: 'about', label: 'Tentang Aplikasi', icon: 'info' }
 ];
 
 function parseHash() {
@@ -650,6 +681,7 @@ function start() {
     S.boot = b; if (!S.wsId || !b.workspaces.some(function (w) { return w.id === S.wsId; })) S.wsId = b.wsId;
     applyTheme();
     if (b.user.mustChange) return renderChangePw();
+    if (b.legal && !b.legal.accepted) return renderLegalGate();
     renderShell(); render(); syncOutbox();
   }, function (e) { if (e.code === 'OFFLINE' || e.code === 'NO_API_URL') renderAuth(e.message); else if (S.token) { toast(e.message, 'bad'); logoutLocal(); } });
 }
@@ -667,13 +699,13 @@ function renderShell() {
     '<div class="shell"><aside class="side" id="side"><div class="brand"><div class="logo">' + ic('scissors') + '</div><div><b>' + esc(b.app.name) + '</b><small>' + esc(b.org.name) + '</small></div></div>' +
     '<nav class="nav">' + nav + '</nav><div class="grow"></div>' +
     '<div class="card flat mt12" style="padding:12px"><div class="row between small"><b>Paket ' + esc(b.plan.label) + '</b><a href="#/license" class="xs">Kelola</a></div>' +
-    usageMini(b) + '</div></aside>' +
+    usageMini(b) + '</div><a href="#/about" class="xs dim center" style="display:block;padding:10px 0 2px">' + esc(b.app.name) + ' v' + esc(b.app.version) + '</a><div class="xs center" style="padding-bottom:4px"><a href="#/terms">S&K</a> · <a href="#/privacy">Privasi</a></div></aside>' +
     '<div class="main"><header class="top"><button class="btn ghost icon mob-only" id="menuBtn" aria-label="Menu">' + ic('menu') + '</button>' +
     '<div class="title grow ellip" id="ptitle"></div><span class="net hide" id="net">' + ic('cloudoff', 's') + ' Offline</span><span class="badge b-warn hide" id="pend"></span>' +
     (b.workspaces.length > 1 ? '<select class="inp ws-sel desk-only" id="wsSel">' + b.workspaces.map(function (w) { return '<option value="' + w.id + '"' + (w.id === S.wsId ? ' selected' : '') + '>' + esc(w.name) + '</option>'; }).join('') + '</select>' : '') +
     '<button class="btn ghost icon" id="themeBtn" aria-label="Tema">' + ic(document.documentElement.getAttribute('data-theme') === 'light' ? 'moon' : 'sun') + '</button>' +
     '<button class="btn ghost icon" id="bellBtn" style="position:relative" aria-label="Notifikasi">' + ic('bell') + '<i class="dot-unread ' + (b.unread ? '' : 'hide') + '" id="bellDot"></i></button>' +
-    '<button class="btn ghost" id="userBtn" style="padding:0 6px"><span class="avatar">' + esc(initials) + '</span></button></header>' +
+    '<button class="btn ghost" id="userBtn" style="padding:0 6px">' + avatarHtml(b.user, 32) + '</button></header>' +
     '<section class="content" id="page"></section></div></div>' +
     '<nav class="bnav">' + [['dashboard', 'home', 'Beranda'], ['media', 'film', 'Media'], ['clips', 'scissors', 'Klip'], ['review', 'checkc', 'Review'], ['_menu', 'menu', 'Menu']].map(function (x) {
       return '<a href="' + (x[0] === '_menu' ? '#' : '#/' + x[0]) + '" data-bn="' + x[0] + '">' + ic(x[1]) + '<span>' + x[2] + '</span></a>';
@@ -683,7 +715,7 @@ function renderShell() {
   $('#menuBtn').onclick = function () { openSide(true); };
   dbg.onclick = function () { openSide(false); };
   $('[data-bn="_menu"]').onclick = function (e) { e.preventDefault(); openSide(true); };
-  $$('.nav a').forEach(function (a) { a.addEventListener('click', function () { openSide(false); }); });
+  $$('#side a').forEach(function (a) { a.addEventListener('click', function () { openSide(false); }); });
   if ($('#wsSel')) $('#wsSel').onchange = function () { S.wsId = this.value; ls('cf_ws', S.wsId); render(); };
   $('#themeBtn').onclick = function () {
     var t = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
@@ -752,10 +784,11 @@ function openNotifs() {
 }
 function openUserMenu() {
   var b = S.boot;
-  var m = modal({ title: b.user.name, body: '<div class="col"><div class="small muted">' + esc(b.user.email) + ' · ' + esc(b.user.roleLabel) + '</div><div class="small muted">' + esc(b.org.name) + '</div>' +
+  var m = modal({ title: b.user.name, body: '<div class="col"><div class="row gap16">' + avatarHtml(b.user, 72, true) + '<div><div class="small muted">' + esc(b.user.email) + ' · ' + esc(b.user.roleLabel) + '</div><div class="small muted">' + esc(b.org.name) + '</div></div></div>' +
     (b.workspaces.length > 1 ? '<label class="f mob-only">Workspace<select class="inp" id="wsm">' + b.workspaces.map(function (w) { return '<option value="' + w.id + '"' + (w.id === S.wsId ? ' selected' : '') + '>' + esc(w.name) + '</option>'; }).join('') + '</select></label>' : '') +
     '<a class="btn" href="#/settings?tab=profile">' + ic('settings') + ' Profil & kata sandi</a><button class="btn" id="syncBtn">' + ic('refresh') + ' Sinkronkan sekarang</button>' +
-    '<button class="btn bad" id="logoutBtn">' + ic('logout') + ' Keluar</button><div class="xs dim center">v' + esc(b.app.version) + (IS_GAS ? ' · Apps Script' : ' · PWA') + '</div></div>' });
+    '<button class="btn bad" id="logoutBtn">' + ic('logout') + ' Keluar</button><div class="xs dim center"><a href="#/about">' + esc(b.app.name) + ' v' + esc(b.app.version) + (IS_GAS ? ' · Apps Script' : ' · PWA') + '</a> · <a href="#/terms">S&K</a> · <a href="#/privacy">Privasi</a></div></div>' });
+  bindAvatarZoom(m.el, [b.user]);
   $$('a', m.el).forEach(function (a) { a.addEventListener('click', m.close); });
   if ($('#wsm', m.el)) $('#wsm', m.el).onchange = function () { S.wsId = this.value; ls('cf_ws', S.wsId); m.close(); renderShell(); render(); };
   act($('#syncBtn', m.el), function () { return syncOutbox().then(function () { m.close(); render(); }); });
@@ -787,7 +820,8 @@ function renderLogin(note) {
     '<form id="lf" class="col"><label class="f">Email<input class="inp" name="email" type="email" autocomplete="username" required></label>' +
     '<label class="f">Kata sandi<input class="inp" name="password" type="password" autocomplete="current-password" required></label>' +
     '<button class="btn pri" type="submit">' + ic('logout') + ' Masuk</button></form>' +
-    '<div class="row between mt12 small"><a href="#" id="forgot">Lupa kata sandi?</a><span class="dim">' + (IS_GAS ? 'Apps Script' : 'PWA') + '</span></div>' + apiUrlField());
+    '<div class="row between mt12 small"><a href="#" id="forgot">Lupa kata sandi?</a><span class="dim">' + (IS_GAS ? 'Apps Script' : 'PWA') + '</span></div>' + apiUrlField() + LegalUI.links());
+  LegalUI.bindLinks($('#app'));
   $('#lf').onsubmit = function (e) {
     e.preventDefault(); saveApiUrl();
     var btn = $('button[type=submit]', this); busy(btn, true);
@@ -822,10 +856,13 @@ function renderSetup(st) {
     '<form id="sf" class="col">' + (st.needsCode ? '<label class="f">Kode setup<input class="inp" name="setupCode" inputmode="numeric" required></label>' : '') +
     '<label class="f">Nama organisasi<input class="inp" name="orgName" required placeholder="Studio Konten Saya"></label><label class="f">Nama Anda<input class="inp" name="name" required></label>' +
     '<label class="f">Email<input class="inp" name="email" type="email" required></label><label class="f">Kata sandi (min. 8, huruf & angka)<input class="inp" name="password" type="password" minlength="8" required></label>' +
-    '<button class="btn pri" type="submit">' + ic('zap') + ' Mulai trial 14 hari</button></form>' + apiUrlField());
+    '<label class="check small"><input type="checkbox" name="acceptLegal" required> <span>Saya menyetujui <a href="#" data-legal="terms">Syarat & Ketentuan</a> dan <a href="#" data-legal="privacy">Pemberitahuan Privasi</a>, serta bertanggung jawab sebagai pengendali data organisasi.</span></label>' +
+    '<button class="btn pri" type="submit">' + ic('zap') + ' Mulai trial 14 hari</button></form>' + apiUrlField() + LegalUI.links());
+  LegalUI.bindLinks($('#app'));
   $('#sf').onsubmit = function (e) {
     e.preventDefault(); saveApiUrl();
     var fd = new FormData(this), p = {}; fd.forEach(function (v, k) { p[k] = v; });
+    p.acceptLegal = !!this.acceptLegal.checked;
     p.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone; p.agent = navigator.userAgent.slice(0, 150);
     var btn = $('button[type=submit]', this); busy(btn, true);
     rawCall({ action: 'setup.init', payload: p }).then(function (r) {
@@ -846,6 +883,368 @@ function renderChangePw() {
     call('auth.changePassword', { oldPassword: this.old.value, newPassword: this.nw.value }).then(function () { toast('Kata sandi diperbarui', 'ok'); start(); }, function (er) { busy(btn, false); errToast(er); });
   };
 }
+
+/* Cuplikin — konten legal (Syarat & Ketentuan, Pemberitahuan Privasi) + halaman Tentang Aplikasi, foto profil & zoom. */
+'use strict';
+var CLIENT_VERSION = '2.1.0-gas';
+var CLIENT_BUILD = '2026-10-12';
+var LEGAL_VERSION_CLIENT = '2026-10-12';
+
+/** Isi placeholder dari data pengendali (pengaturan organisasi). */
+function legalVars(info) {
+  var c = (info && info.controller) || {};
+  return {
+    APP: (info && info.app) || 'Cuplikin',
+    ORG: c.name || '[Nama organisasi pengelola]',
+    EMAIL: c.email || '[email kontak privasi]',
+    ADDR: c.address || '[alamat organisasi]',
+    DPO: c.dpo || 'petugas yang ditunjuk organisasi (belum diisi)',
+    PHONE: c.phone || '-',
+    PROVIDER: ((info && info.provider) || {}).name || 'Penyedia Cuplikin',
+    VER: (info && info.version) || LEGAL_VERSION_CLIENT
+  };
+}
+function fillLegal(src, info) {
+  var v = legalVars(info);
+  return src.replace(/\{\{(\w+)\}\}/g, function (_, k) { return v[k] !== undefined ? v[k] : _; });
+}
+
+var LEGAL_TERMS = [
+  '# Syarat & Ketentuan Penggunaan {{APP}}',
+  '**Versi {{VER}}** · Berlaku untuk seluruh pengguna instalasi {{APP}} yang dikelola oleh **{{ORG}}**.',
+  '## 1. Definisi',
+  '- **Aplikasi**: perangkat lunak {{APP}} (versi Google Apps Script dan PWA) untuk mentranskripsi, memotong, menata, meninjau, menjadwalkan, dan menganalisis klip video/podcast.',
+  '- **Pengelola**: {{ORG}}, organisasi yang memasang Aplikasi di akun Google miliknya dan mengundang Pengguna.',
+  '- **Penyedia**: {{PROVIDER}}, pembuat dan pemberi lisensi perangkat lunak. Penyedia tidak mengelola data Anda.',
+  '- **Pengguna / Anda**: setiap orang yang memiliki akun di instalasi ini.',
+  '- **Konten**: media, transkrip, klip, render, caption, komentar, metrik, dan data lain yang diunggah atau dihasilkan di Aplikasi.',
+  '## 2. Penerimaan',
+  'Dengan membuat akun, masuk, atau menggunakan Aplikasi, Anda menyatakan telah membaca dan menyetujui Syarat & Ketentuan ini serta Pemberitahuan Privasi. Anda harus berusia minimal 18 tahun atau mendapat izin dari pihak yang berwenang di organisasi Anda. Jika tidak setuju, jangan gunakan Aplikasi.',
+  '## 3. Akun & keamanan',
+  '- Akun bersifat pribadi; jangan membagikan kata sandi. Ganti kata sandi sementara saat pertama masuk.',
+  '- Anda bertanggung jawab atas aktivitas di akun Anda. Laporkan dugaan penyalahgunaan ke {{EMAIL}}.',
+  '- Pengelola dapat mengubah peran, menonaktifkan, atau menghapus akun Anda. Semua tindakan penting tercatat di Audit Log.',
+  '## 4. Penggunaan yang diizinkan',
+  'Aplikasi hanya boleh dipakai untuk konten yang **Anda miliki, berlisensi, atau telah mendapat izin tertulis** dari pemegang hak, serta dengan persetujuan orang yang wajah atau suaranya tampil.',
+  '## 5. Larangan',
+  '- Mengunggah atau memotong konten pihak lain tanpa hak, termasuk mengunduh video dari YouTube, TikTok, Instagram, atau platform lain dengan cara yang melanggar ketentuan platform tersebut.',
+  '- Membuat konten yang menyesatkan: memotong ucapan sehingga maknanya berubah, menyamar sebagai orang lain, atau membuat *deepfake*.',
+  '- Konten yang melanggar hukum Indonesia, termasuk muatan pornografi, perjudian, pencemaran nama baik, ujaran kebencian berbasis SARA, berita bohong, dan pelanggaran hak cipta (UU ITE, UU Hak Cipta, dan peraturan terkait).',
+  '- Memproses data pribadi orang lain tanpa dasar hukum yang sah, termasuk konten yang menampilkan anak tanpa persetujuan orang tua/wali.',
+  '- Mencoba membobol keamanan, melewati pemeriksaan lisensi atau kuota, membanjiri sistem, atau merekayasa balik Aplikasi di luar yang diizinkan hukum.',
+  '## 6. Konten & hak kekayaan intelektual',
+  '- Hak atas Konten tetap milik pemiliknya. Anda memberi Pengelola hak untuk menyimpan dan memproses Konten sebatas yang diperlukan untuk menjalankan Aplikasi.',
+  '- Status hak (Milik sendiri, Berlisensi, Izin tertulis) yang Anda nyatakan saat unggah harus benar. Klip dari media yang haknya belum terverifikasi tidak dapat disetujui atau dijadwalkan.',
+  '- Perangkat lunak, desain, dan merek {{APP}} adalah milik Penyedia dan dilisensikan kepada Pengelola; tidak dialihkan kepada Pengguna.',
+  '## 7. Fitur AI & otomatisasi',
+  '- Transkripsi, deteksi momen, skor potensi, copywriting, terjemahan, dan repurpose dapat memakai Google Gemini API atau mesin heuristik lokal.',
+  '- Hasil AI dapat keliru atau tidak lengkap. **Skor potensi viral adalah perkiraan, bukan jaminan hasil.** Periksa setiap transkrip, subtitle, dan caption sebelum dipublikasikan; alur review disediakan untuk itu.',
+  '- Anda bertanggung jawab atas konten yang Anda publikasikan, termasuk konten yang dibantu AI.',
+  '## 8. Layanan pihak ketiga',
+  'Aplikasi berjalan di atas layanan Google (Apps Script, Sheets, Drive, Gemini API) dan dapat terhubung ke Fonnte (WhatsApp), Telegram, layanan email, serta webhook (Make, Zapier, n8n) yang dipilih Pengelola. Ketentuan masing-masing layanan berlaku. Publikasi ke media sosial tunduk pada ketentuan platform tersebut.',
+  '## 9. Ketersediaan, kuota & data lokal',
+  '- Aplikasi tunduk pada kuota Google (waktu eksekusi, panggilan jaringan, email) dan kuota paket lisensi Pengelola. Tidak ada jaminan ketersediaan 100% kecuali disepakati tertulis antara Pengelola dan Penyedia.',
+  '- Mode offline menyimpan salinan data di perangkat Anda. Perubahan offline disinkronkan saat online; Anda bertanggung jawab atas keamanan perangkat Anda.',
+  '## 10. Penangguhan & pengakhiran',
+  'Pengelola dapat menangguhkan atau menghapus akun yang melanggar Syarat & Ketentuan ini. Bila lisensi Pengelola berakhir, fitur premium terkunci namun data tidak dihapus oleh Penyedia.',
+  '## 11. Penafian & batas tanggung jawab',
+  'Aplikasi disediakan "sebagaimana adanya". Sejauh diizinkan hukum, Pengelola dan Penyedia tidak bertanggung jawab atas kerugian tidak langsung, kehilangan keuntungan, klaim pihak ketiga akibat Konten yang Anda unggah atau publikasikan, maupun gangguan layanan pihak ketiga.',
+  '## 12. Ganti rugi',
+  'Anda setuju membebaskan Pengelola dan Penyedia dari tuntutan pihak ketiga yang timbul akibat pelanggaran Anda terhadap Syarat & Ketentuan ini atau hak pihak lain.',
+  '## 13. Perubahan',
+  'Syarat & Ketentuan dapat diperbarui. Versi baru ditandai dengan tanggal versi; Anda akan diminta menyetujuinya kembali sebelum melanjutkan penggunaan.',
+  '## 14. Hukum yang berlaku',
+  'Syarat & Ketentuan ini tunduk pada hukum Republik Indonesia. Sengketa diselesaikan secara musyawarah terlebih dahulu, kemudian melalui pengadilan yang berwenang di domisili Pengelola.',
+  '## 15. Kontak',
+  '{{ORG}} · {{ADDR}} · {{EMAIL}} · Telp. {{PHONE}}'
+].join('\n');
+
+var LEGAL_PRIVACY = [
+  '# Pemberitahuan Privasi {{APP}}',
+  '**Versi {{VER}}** · Disusun mengacu pada Undang-Undang No. 27 Tahun 2022 tentang Pelindungan Data Pribadi (UU PDP).',
+  '## 1. Siapa yang memproses data Anda',
+  '- **Pengendali Data Pribadi: {{ORG}}** ({{ADDR}}), organisasi yang memasang dan mengelola instalasi {{APP}} ini serta menentukan tujuan pemrosesan.',
+  '- **{{PROVIDER}}** hanya menyediakan perangkat lunak. Aplikasi berjalan di akun Google milik Pengelola, sehingga Penyedia **tidak menerima dan tidak menyimpan** data Anda, kecuali Pengelola memberikan akses tertulis untuk dukungan teknis.',
+  '- **Google** menyediakan infrastruktur (Apps Script, Sheets, Drive) dan layanan AI (Gemini API) sebagai pemroses atas instruksi Pengelola.',
+  '- Kontak privasi / Pejabat Pelindungan Data: {{DPO}} — {{EMAIL}}.',
+  '## 2. Data yang diproses',
+  '| Kategori | Contoh data | Sumber |',
+  '|---|---|---|',
+  '| Akun | Nama, email, peran, workspace, hash kata sandi (bukan kata sandi asli), waktu login | Anda / admin |',
+  '| Profil | Foto profil (opsional), tema, preferensi notifikasi, nomor WhatsApp (opsional) | Anda |',
+  '| Keamanan & audit | Aksi penting, waktu, ID objek, jenis browser saat login, percobaan login gagal | Otomatis |',
+  '| Konten | Video/audio, transkrip ucapan, nama/peran pembicara, klip, render, caption, komentar review | Anda / tim |',
+  '| Orang dalam konten | Wajah, suara, ucapan, dan nama narasumber yang tampil di media | Media yang diunggah |',
+  '| Kinerja | Metrik postingan (tayangan, suka, komentar) dan URL postingan | Anda / CSV |',
+  '| Perangkat | Token sesi, cache offline (IndexedDB), pengaturan tampilan (localStorage) | Browser Anda |',
+  'Aplikasi **tidak** melakukan pengenalan wajah atau identifikasi suara biometrik; pembeda pembicara (S1, S2, …) hanya label dalam transkrip. Aplikasi tidak memakai cookie iklan atau pelacak pihak ketiga.',
+  '## 3. Tujuan & dasar hukum pemrosesan',
+  '- **Menjalankan layanan** (akun, unggah, transkripsi, klip, review, publikasi) — pelaksanaan perjanjian/hubungan kerja dengan Pengelola.',
+  '- **Konten yang menampilkan narasumber** — persetujuan narasumber yang dikumpulkan Pengelola (dicentang saat unggah) atau dasar sah lainnya sesuai Pasal 20 UU PDP.',
+  '- **Keamanan, pencegahan penyalahgunaan, audit** — kepentingan yang sah dan pemenuhan kewajiban hukum.',
+  '- **Notifikasi** (email, WhatsApp, Telegram) — persetujuan Anda melalui pengaturan profil; dapat dimatikan kapan saja.',
+  '- **Analitik konten** — kepentingan sah Pengelola untuk mengukur kinerja konten; tidak dipakai untuk profil perilaku pribadi.',
+  '## 4. Pemrosesan dengan AI',
+  '- Bila diaktifkan Pengelola, file media dan transkrip dikirim ke **Google Gemini API** untuk transkripsi, deteksi momen, copywriting, terjemahan, dan ringkasan. Menurut ketentuan Google, data pada **layanan Gemini gratis dapat digunakan untuk meningkatkan produk Google**, sedangkan data pada layanan berbayar tidak. Pengelola disarankan memakai layanan berbayar untuk konten rahasia.',
+  '- Skor potensi viral menilai **konten**, bukan orang. Tidak ada keputusan otomatis yang menimbulkan akibat hukum atau berdampak signifikan terhadap diri Anda.',
+  '## 5. Penerima data',
+  '- Anggota tim di organisasi yang sama sesuai peran dan akses workspace.',
+  '- Google LLC (penyimpanan, komputasi, AI), penyedia email Google.',
+  '- Fonnte (WhatsApp) dan Telegram — hanya bila diaktifkan.',
+  '- Alamat webhook (mis. Make, Zapier, n8n) yang dikonfigurasi Pengelola — menerima caption, judul klip, dan tautan render saat jadwal jatuh tempo.',
+  '- Platform media sosial — hanya konten yang Anda publikasikan.',
+  '- Instansi berwenang bila diwajibkan peraturan perundang-undangan.',
+  'Data **tidak dijual** kepada pihak mana pun.',
+  '## 6. Transfer ke luar negeri',
+  'Server Google dan penyedia notifikasi dapat berada di luar wilayah Indonesia. Transfer dilakukan dengan memperhatikan Pasal 56 UU PDP, bergantung pada perlindungan kontraktual dan keamanan dari penyedia layanan tersebut.',
+  '## 7. Masa penyimpanan',
+  '| Data | Masa simpan |',
+  '|---|---|',
+  '| Akun & profil | Selama akun aktif; dihapus saat akun dihapus oleh admin |',
+  '| Konten (media, transkrip, klip, render) | Sampai dihapus Pengelola/Pengguna; menghapus media juga menghapus transkrip, subtitle & konten turunannya |',
+  '| Sesi login | 7 hari; sesi kedaluwarsa dibersihkan otomatis |',
+  '| Audit log | 5.000 entri terakhir per instalasi |',
+  '| Notifikasi | 2.000 entri terakhir |',
+  '| Backup spreadsheet | 7 salinan harian terakhir di Google Drive Pengelola |',
+  '| Cache perangkat | Sampai Anda keluar, membersihkan cache di Pengaturan, atau menghapus data browser |',
+  '## 8. Keamanan',
+  'Kata sandi di-hash (PBKDF2-SHA256 dengan salt), token sesi disimpan dalam bentuk hash, akses dibatasi peran (RBAC), percobaan login berulang dikunci sementara, rahasia integrasi disimpan di server, webhook ditandatangani HMAC, dan aktivitas penting tercatat di audit log. Tidak ada sistem yang 100% aman; segera laporkan dugaan insiden ke {{EMAIL}}. Bila terjadi kegagalan pelindungan data pribadi, Pengelola akan memberitahu subjek data dan lembaga yang berwenang paling lambat 3 x 24 jam sesuai Pasal 46 UU PDP.',
+  '## 9. Hak Anda',
+  '- Mendapatkan informasi tentang pemrosesan data Anda.',
+  '- Mengakses dan memperoleh salinan data pribadi Anda.',
+  '- Memperbaiki data yang tidak akurat (nama & foto dapat diubah sendiri di Pengaturan → Profil).',
+  '- Meminta penghapusan atau pemusnahan data, serta mengakhiri pemrosesan.',
+  '- Menarik kembali persetujuan (mis. mematikan notifikasi WhatsApp/email).',
+  '- Mengajukan keberatan atas pemrosesan dan meminta pembatasan atau penundaan pemrosesan.',
+  '- Narasumber yang tampil dalam konten dapat meminta klip/transkrip yang memuat dirinya dihapus.',
+  'Ajukan permintaan ke {{EMAIL}}. Pengelola akan menanggapi dalam jangka waktu yang ditetapkan UU PDP (untuk sebagian besar hak, paling lambat 3 x 24 jam sejak permintaan diterima).',
+  '## 10. Anak',
+  'Aplikasi ditujukan bagi pengguna berusia 18 tahun ke atas. Konten yang menampilkan anak hanya boleh diproses dengan persetujuan orang tua atau wali (Pasal 25 UU PDP).',
+  '## 11. Perubahan pemberitahuan ini',
+  'Pemberitahuan ini dapat diperbarui. Versi baru ditandai tanggal versi dan Anda akan diminta menyetujuinya kembali di dalam Aplikasi.',
+  '## 12. Kontak',
+  '{{ORG}} · {{ADDR}} · {{EMAIL}} · Telp. {{PHONE}}'
+].join('\n');
+
+// ---------- Tampilan dokumen legal ----------
+var LegalUI = {
+  info: null,
+  load: function () {
+    if (LegalUI.info) return Promise.resolve(LegalUI.info);
+    return rawCall({ action: 'legal.info' }).then(function (r) { LegalUI.info = r.ok ? r.data : null; return LegalUI.info; }, function () { return null; });
+  },
+  html: function (kind, info) { return '<div class="md legal">' + md(fillLegal(kind === 'privacy' ? LEGAL_PRIVACY : LEGAL_TERMS, info)) + '</div>'; },
+  open: function (kind) {
+    LegalUI.load().then(function (info) {
+      modal({ title: kind === 'privacy' ? 'Pemberitahuan Privasi' : 'Syarat & Ketentuan', wide: true, body: LegalUI.html(kind, info),
+        foot: [{ label: ic('download') + ' Unduh', onClick: function () { downloadBlob(new Blob([fillLegal(kind === 'privacy' ? LEGAL_PRIVACY : LEGAL_TERMS, info)], { type: 'text/markdown' }), (kind === 'privacy' ? 'pemberitahuan-privasi' : 'syarat-ketentuan') + '.md'); } }, { label: 'Tutup', cls: 'pri' }] });
+    });
+  },
+  links: function () {
+    return '<div class="xs dim center mt12"><a href="#" data-legal="terms">Syarat & Ketentuan</a> · <a href="#" data-legal="privacy">Pemberitahuan Privasi</a> · v' + CLIENT_VERSION + '</div>';
+  },
+  bindLinks: function (root) {
+    $$('[data-legal]', root).forEach(function (a) { a.onclick = function (e) { e.preventDefault(); LegalUI.open(a.dataset.legal); }; });
+  }
+};
+
+/** Layar persetujuan wajib (pengguna baru / dokumen diperbarui). */
+function renderLegalGate() {
+  LegalUI.load().then(function (info) {
+    $('#app').innerHTML = authFrame('<h2>Persetujuan diperlukan</h2><p class="small muted">Sebelum menggunakan ' + esc((info && info.app) || 'Cuplikin') + ', mohon baca dan setujui dokumen berikut (versi ' + esc(LEGAL_VERSION_CLIENT) + ').</p>' +
+      '<div class="col"><button class="btn" data-legal="terms">' + ic('book') + ' Baca Syarat & Ketentuan</button><button class="btn" data-legal="privacy">' + ic('shield') + ' Baca Pemberitahuan Privasi</button>' +
+      '<div class="card flat small" style="padding:12px"><b>Ringkasnya:</b><ul style="margin:6px 0 0;padding-left:18px"><li>Hanya proses konten milik sendiri, berlisensi, atau berizin.</li><li>Data disimpan di akun Google milik ' + esc(legalVars(info).ORG) + ', bukan di server penyedia.</li><li>Fitur AI dapat mengirim media/transkrip ke Google Gemini.</li><li>Anda dapat meminta akses, koreksi & penghapusan data.</li></ul></div>' +
+      '<label class="check"><input type="checkbox" id="lgOk"> Saya telah membaca dan menyetujui Syarat & Ketentuan serta Pemberitahuan Privasi.</label>' +
+      '<button class="btn pri" id="lgBtn" disabled>' + ic('check') + ' Setuju & lanjutkan</button><button class="btn ghost" id="lgOut">Keluar</button></div>');
+    LegalUI.bindLinks($('#app'));
+    $('#lgOk').onchange = function () { $('#lgBtn').disabled = !this.checked; };
+    act($('#lgBtn'), function () { return call('auth.acceptLegal', { version: LEGAL_VERSION_CLIENT }).then(function () { toast('Terima kasih. Persetujuan tercatat.', 'ok'); start(); }); });
+    $('#lgOut').onclick = function () { call('auth.logout', {}).catch(function () { }).then(logoutLocal); };
+  });
+}
+
+// ---------- Foto profil ----------
+function avatarHtml(u, size, zoomable) {
+  size = size || 32;
+  var initials = ((u && (u.name || u.email)) || '?').split(/\s+/).map(function (w) { return w[0]; }).slice(0, 2).join('').toUpperCase();
+  var st = 'width:' + size + 'px;height:' + size + 'px;font-size:' + Math.round(size * 0.38) + 'px';
+  var attrs = zoomable && u && u.avatar ? ' data-zoom-user="' + esc(u.id) + '" role="button" tabindex="0" title="Perbesar foto"' : '';
+  if (u && u.avatar) return '<span class="avatar img' + (zoomable ? ' zoomable' : '') + '" style="' + st + '"' + attrs + '><img src="' + esc(u.avatar) + '" alt="Foto ' + esc(u.name || '') + '"></span>';
+  return '<span class="avatar" style="' + st + '">' + esc(initials) + '</span>';
+}
+function bindAvatarZoom(root, users) {
+  $$('[data-zoom-user]', root).forEach(function (el) {
+    var go2 = function (e) {
+      e.preventDefault(); e.stopPropagation();
+      var u = (users || []).filter(function (x) { return x.id === el.dataset.zoomUser; })[0] || (S.boot && S.boot.user.id === el.dataset.zoomUser ? S.boot.user : null);
+      openAvatarZoom(el.dataset.zoomUser, u);
+    };
+    el.addEventListener('click', go2);
+    el.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') go2(e); });
+  });
+}
+function openAvatarZoom(userId, u) {
+  var z = openImageZoom((u && u.avatar) || '', (u && u.name) || 'Foto profil');
+  if (!u || u.hasAvatarFull !== false) {
+    call('auth.avatarGet', { userId: userId }, { silent: true }).then(function (r) { if (r.full) z.setSrc(r.full); }).catch(function () { });
+  }
+}
+
+/** Penampil gambar layar penuh: cubit/roda untuk zoom, geser untuk pan, ketuk ganda untuk 2.5×. */
+function openImageZoom(src, title) {
+  var bg = document.createElement('div');
+  bg.className = 'zoom-bg';
+  bg.innerHTML = '<div class="zoom-top"><b class="grow ellip">' + esc(title) + '</b><span class="mono small" id="zLvl">100%</span>' +
+    '<button class="btn ghost icon" data-z="out" aria-label="Perkecil">−</button><button class="btn ghost icon" data-z="in" aria-label="Perbesar">+</button>' +
+    '<button class="btn ghost icon" data-z="reset" aria-label="Reset">' + ic('refresh') + '</button><button class="btn ghost icon" data-z="close" aria-label="Tutup">' + ic('x') + '</button></div>' +
+    '<div class="zoom-stage"><img alt="' + esc(title) + '" draggable="false"></div><div class="zoom-hint xs">Cubit / roda mouse untuk zoom · seret untuk geser · ketuk ganda 2,5×</div>';
+  document.body.appendChild(bg);
+  var stage = $('.zoom-stage', bg), img = $('img', bg);
+  var s = 1, x = 0, y = 0, MIN = 1, MAX = 6;
+  var apply = function (anim) {
+    var r = stage.getBoundingClientRect(), iw = img.clientWidth * s, ih = img.clientHeight * s;
+    var mx = Math.max(0, (iw - r.width) / 2), my = Math.max(0, (ih - r.height) / 2);
+    x = Math.max(-mx, Math.min(mx, x)); y = Math.max(-my, Math.min(my, y));
+    img.style.transition = anim ? 'transform .2s ease' : 'none';
+    img.style.transform = 'translate(' + x + 'px,' + y + 'px) scale(' + s + ')';
+    $('#zLvl', bg).textContent = Math.round(s * 100) + '%';
+    stage.style.cursor = s > 1 ? 'grab' : 'zoom-in';
+  };
+  var zoomAt = function (ns, cx, cy, anim) {
+    ns = Math.max(MIN, Math.min(MAX, ns));
+    var r = stage.getBoundingClientRect();
+    var px = (cx === undefined ? r.left + r.width / 2 : cx) - (r.left + r.width / 2), py = (cy === undefined ? r.top + r.height / 2 : cy) - (r.top + r.height / 2);
+    x = px - (px - x) * ns / s; y = py - (py - y) * ns / s; s = ns;
+    if (s === 1) { x = 0; y = 0; }
+    apply(anim);
+  };
+  var close = function () { bg.remove(); document.removeEventListener('keydown', onKey); };
+  var onKey = function (e) { if (e.key === 'Escape') close(); if (e.key === '+' || e.key === '=') zoomAt(s * 1.4, undefined, undefined, true); if (e.key === '-') zoomAt(s / 1.4, undefined, undefined, true); if (e.key === '0') zoomAt(1, undefined, undefined, true); };
+  document.addEventListener('keydown', onKey);
+  $$('[data-z]', bg).forEach(function (b) {
+    b.onclick = function () { var k = b.dataset.z; if (k === 'close') close(); else if (k === 'in') zoomAt(s * 1.5, undefined, undefined, true); else if (k === 'out') zoomAt(s / 1.5, undefined, undefined, true); else zoomAt(1, undefined, undefined, true); };
+  });
+  stage.addEventListener('wheel', function (e) { e.preventDefault(); zoomAt(s * Math.exp(-e.deltaY * 0.0018), e.clientX, e.clientY); }, { passive: false });
+  var pts = {}, last = null, pinch = null, lastTap = 0, moved = false;
+  stage.addEventListener('pointerdown', function (e) {
+    stage.setPointerCapture(e.pointerId); pts[e.pointerId] = { x: e.clientX, y: e.clientY }; moved = false;
+    var ids = Object.keys(pts);
+    if (ids.length === 2) { var a = pts[ids[0]], b2 = pts[ids[1]]; pinch = { d: Math.hypot(a.x - b2.x, a.y - b2.y), s: s }; last = null; }
+    else last = { x: e.clientX, y: e.clientY };
+  });
+  stage.addEventListener('pointermove', function (e) {
+    if (!pts[e.pointerId]) return;
+    pts[e.pointerId] = { x: e.clientX, y: e.clientY };
+    var ids = Object.keys(pts);
+    if (ids.length === 2 && pinch) {
+      var a = pts[ids[0]], b2 = pts[ids[1]], d = Math.hypot(a.x - b2.x, a.y - b2.y);
+      zoomAt(pinch.s * d / pinch.d, (a.x + b2.x) / 2, (a.y + b2.y) / 2); moved = true;
+    } else if (last && s > 1) { x += e.clientX - last.x; y += e.clientY - last.y; last = { x: e.clientX, y: e.clientY }; moved = true; apply(); stage.style.cursor = 'grabbing'; }
+  });
+  var up = function (e) {
+    delete pts[e.pointerId];
+    if (Object.keys(pts).length < 2) pinch = null;
+    if (!Object.keys(pts).length) {
+      last = null;
+      var now = Date.now();
+      if (!moved && now - lastTap < 300) { zoomAt(s > 1.05 ? 1 : 2.5, e.clientX, e.clientY, true); lastTap = 0; }
+      else if (!moved && e.target === stage && s === 1) close();
+      else lastTap = now;
+      apply();
+    }
+  };
+  stage.addEventListener('pointerup', up); stage.addEventListener('pointercancel', up);
+  var ret = { close: close, setSrc: function (u2) { if (!u2) return; var keep = s; var im2 = new Image(); im2.onload = function () { img.src = u2; zoomAt(keep); }; im2.src = u2; } };
+  img.onload = function () { apply(); };
+  if (src) img.src = src; else stage.insertAdjacentHTML('beforeend', '<span class="spin" style="width:28px;height:28px;border:3px solid #fff;border-right-color:transparent;border-radius:50%;animation:sp .7s linear infinite;position:absolute"></span>');
+  img.addEventListener('load', function () { var sp = $('.spin', stage); if (sp) sp.remove(); });
+  return ret;
+}
+
+/** Editor foto profil: geser & zoom untuk memotong persegi, lalu buat versi penuh (≤1024 px) & thumbnail (128 px). */
+function openAvatarEditor(file, onSaved) {
+  var url = URL.createObjectURL(file);
+  var m = modal({ title: 'Atur foto profil', body: '<div class="col center"><div class="crop-wrap"><canvas id="cropCv" width="320" height="320"></canvas><div class="crop-ring"></div></div>' +
+    '<label class="f" style="width:100%;max-width:320px;margin:auto">Zoom<input type="range" id="cropZ" min="1" max="4" step="0.01" value="1"></label><div class="xs dim">Seret foto untuk mengatur posisi. Foto disimpan di Google Drive/Sheets organisasi.</div></div>',
+    onClose: function () { URL.revokeObjectURL(url); },
+    foot: [{ label: 'Batal', cls: 'ghost' }, { label: ic('check') + ' Simpan foto', cls: 'pri', onClick: function (close) {
+      var full = render(Math.min(1024, Math.round(Math.min(im.naturalWidth, im.naturalHeight) / z)), 0.86);
+      var q = 0.86; while (full.length > 380000 && q > 0.4) { q -= 0.1; full = render(Math.min(768, Math.round(Math.min(im.naturalWidth, im.naturalHeight) / z)), q); }
+      var thumb = render(128, 0.8);
+      return call('auth.avatar', { thumb: thumb, full: full }, { noQueue: true }).then(function (u) { toast('Foto profil diperbarui', 'ok'); close(); onSaved && onSaved(u); });
+    } }] });
+  var cv = $('#cropCv', m.el), ctx = cv.getContext('2d'), im = new Image(), z = 1, ox = 0, oy = 0, base = 1;
+  var draw = function () {
+    var S2 = cv.width, sc = base * z, w = im.naturalWidth * sc, h = im.naturalHeight * sc;
+    ox = Math.min(0, Math.max(S2 - w, ox)); oy = Math.min(0, Math.max(S2 - h, oy));
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, S2, S2); ctx.drawImage(im, ox, oy, w, h);
+  };
+  /** Potong area yang terlihat ke kanvas persegi berukuran size. */
+  var render = function (size, q) {
+    size = Math.max(64, size);
+    var c = document.createElement('canvas'); c.width = c.height = size;
+    var sc = base * z, k = size / cv.width;
+    var g = c.getContext('2d'); g.imageSmoothingQuality = 'high';
+    g.drawImage(im, ox * k, oy * k, im.naturalWidth * sc * k, im.naturalHeight * sc * k);
+    return c.toDataURL('image/jpeg', q);
+  };
+  im.onload = function () { base = cv.width / Math.min(im.naturalWidth, im.naturalHeight); ox = (cv.width - im.naturalWidth * base) / 2; oy = (cv.height - im.naturalHeight * base) / 2; draw(); };
+  im.onerror = function () { toast('Berkas bukan gambar yang valid', 'bad'); m.close(); };
+  im.src = url;
+  $('#cropZ', m.el).oninput = function () {
+    var nz = Number(this.value), c = cv.width / 2;
+    ox = c - (c - ox) * nz / z; oy = c - (c - oy) * nz / z; z = nz; draw();
+  };
+  var drag = null;
+  cv.addEventListener('pointerdown', function (e) { cv.setPointerCapture(e.pointerId); drag = { x: e.clientX, y: e.clientY }; });
+  cv.addEventListener('pointermove', function (e) { if (!drag) return; var k = cv.width / cv.getBoundingClientRect().width; ox += (e.clientX - drag.x) * k; oy += (e.clientY - drag.y) * k; drag = { x: e.clientX, y: e.clientY }; draw(); });
+  cv.addEventListener('pointerup', function () { drag = null; });
+  cv.addEventListener('wheel', function (e) { e.preventDefault(); var r = $('#cropZ', m.el); r.value = Math.max(1, Math.min(4, Number(r.value) * Math.exp(-e.deltaY * 0.0015))); r.oninput(); }, { passive: false });
+}
+
+function profilePhotoCard() {
+  var u = S.boot.user;
+  return '<div class="card"><div class="card-h"><h3>Foto profil</h3></div><div class="row wrap gap16"><div id="pfAv">' + avatarHtml(u, 96, true) + '</div>' +
+    '<div class="col gap6"><label class="btn pri">' + ic('image') + ' ' + (u.avatar ? 'Ganti foto' : 'Unggah foto') + '<input type="file" accept="image/jpeg,image/png,image/webp" class="hide" id="pfIn"></label>' +
+    (u.avatar ? '<button class="btn" id="pfZoom">' + ic('search') + ' Perbesar</button><button class="btn ghost" id="pfDel">' + ic('trash') + ' Hapus foto</button>' : '') +
+    '<div class="xs dim">JPG/PNG/WEBP. Ketuk foto untuk memperbesar.</div></div></div></div>';
+}
+function bindProfilePhoto(root) {
+  var refresh = function (u) { if (u && !u.queued) { S.boot.user = u; renderShell(); render(); } };
+  var inp = $('#pfIn', root);
+  if (inp) inp.onchange = function () { var f = this.files[0]; if (!f) return; if (f.size > 15 * 1048576) return toast('Gambar maks 15 MB', 'warn'); openAvatarEditor(f, refresh); this.value = ''; };
+  if ($('#pfZoom', root)) $('#pfZoom', root).onclick = function () { openAvatarZoom(S.boot.user.id, S.boot.user); };
+  if ($('#pfDel', root)) $('#pfDel', root).onclick = function () { confirmBox('Hapus foto profil?', '', 'Hapus', true).then(function (ok) { if (ok) call('auth.avatar', { thumb: '', full: '' }, { noQueue: true }).then(refresh).catch(errToast); }); };
+  bindAvatarZoom(root, [S.boot.user]);
+}
+
+// ---------- Halaman: Tentang, S&K, Privasi ----------
+Pages.about = {
+  title: 'Tentang Aplikasi',
+  render: function (el) {
+    return Promise.all([call('app.about'), cacheVersion()]).then(function (r) {
+      var a = r[0], swv = r[1], b = S.boot;
+      var mismatch = a.version !== CLIENT_VERSION;
+      el.innerHTML = pageHead('Tentang ' + esc(b.app.name), 'AI Video & Podcast Clipper — edisi Google Apps Script') +
+        (mismatch ? '<div class="banner warn">' + ic('info') + '<div class="grow">Versi aplikasi di perangkat (' + esc(CLIENT_VERSION) + ') berbeda dengan server (' + esc(a.version) + '). ' + (IS_GAS ? 'Muat ulang halaman.' : 'Perbarui berkas GitHub Pages atau muat ulang.') + '</div><button class="btn sm" onclick="location.reload()">Muat ulang</button></div>' : '') +
+        '<div class="grid g3"><div class="card" style="grid-column:span 2"><div class="row gap16"><div class="logo" style="width:64px;height:64px;border-radius:18px">' + ic('scissors', 'l') + '</div><div><h2>' + esc(b.app.name) + '</h2><div class="muted">Versi <b>' + esc(a.version) + '</b> · build ' + esc(a.build) + '</div></div></div>' +
+        '<table class="tbl mt16"><tbody>' + [['Versi server (Apps Script)', a.version], ['Versi klien (antarmuka)', CLIENT_VERSION + ' · build ' + CLIENT_BUILD], ['Mode', IS_GAS ? 'Apps Script Web App' : 'PWA (GitHub Pages)' + (window.matchMedia && matchMedia('(display-mode: standalone)').matches ? ' — terinstal' : '')],
+          ['Cache offline', swv || (IS_GAS ? 'tidak tersedia di mode Apps Script' : 'service worker belum aktif')], ['Runtime', a.runtime], ['Paket', a.plan], ['Model AI', a.model], ['Zona waktu server', a.timezone],
+          ['Script ID', '<span class="mono">' + esc(a.scriptId) + '</span>'], ['Dokumen legal', 'versi ' + esc(a.legalVersion) + (b.legal && b.legal.acceptedAt ? ' · Anda setujui ' + fmtDate(b.legal.acceptedAt, true) : '')]]
+          .map(function (x) { return '<tr><td class="muted" style="width:40%">' + x[0] + '</td><td>' + (String(x[1]).indexOf('<span') === 0 ? x[1] : esc(x[1])) + '</td></tr>'; }).join('') + '</tbody></table>' +
+        '<div class="row wrap mt12"><a class="btn" href="#/terms">' + ic('book') + ' Syarat & Ketentuan</a><a class="btn" href="#/privacy">' + ic('shield') + ' Pemberitahuan Privasi</a><button class="btn ghost" id="cpInfo">' + ic('copy') + ' Salin info untuk dukungan</button></div></div>' +
+        '<div class="card"><div class="card-h"><h3>Riwayat versi</h3></div>' + a.changelog.map(function (c) { return '<div class="mb12"><div class="row"><span class="badge b-ac">v' + esc(c.v) + '</span><span class="xs dim">' + fmtDate(c.date) + '</span></div><ul class="small" style="margin:6px 0 0;padding-left:18px">' + c.items.map(function (i) { return '<li>' + esc(i) + '</li>'; }).join('') + '</ul></div>'; }).join('') + '</div></div>' +
+        '<div class="card mt16"><div class="card-h"><h3>Komponen & lisensi pihak ketiga</h3></div><p class="small muted" style="margin:0">Font Inter, Poppins, Montserrat, Bebas Neue, Oswald, Plus Jakarta Sans (SIL Open Font License 1.1) dan Roboto (Apache-2.0) via Google Fonts. Tidak ada pustaka JavaScript pihak ketiga yang dibundel; ikon digambar sendiri. Konsep awal diturunkan dari templat Google AI Studio (Apache-2.0). TikTok, YouTube, Instagram, LinkedIn, X, Facebook, Google & Gemini adalah merek dagang pemiliknya.</p></div>';
+      $('#cpInfo').onclick = function () { copyText(b.app.name + ' server ' + a.version + ' / klien ' + CLIENT_VERSION + ' (' + (IS_GAS ? 'GAS' : 'PWA') + ') · cache ' + (swv || '-') + ' · paket ' + a.plan + ' · script ' + a.scriptId + ' · ' + navigator.userAgent); };
+    });
+  }
+};
+function cacheVersion() {
+  if (IS_GAS || !window.caches) return Promise.resolve('');
+  return caches.keys().then(function (k) { return k.filter(function (x) { return /^cuplikin-v/.test(x); })[0] || ''; }, function () { return ''; });
+}
+Pages.terms = { title: 'Syarat & Ketentuan', render: function (el) { return LegalUI.load().then(function (info) { el.innerHTML = '<div class="card legal-page">' + LegalUI.html('terms', info) + '</div>'; }); } };
+Pages.privacy = { title: 'Pemberitahuan Privasi', render: function (el) { return LegalUI.load().then(function (info) { el.innerHTML = '<div class="card legal-page">' + LegalUI.html('privacy', info) + '</div>'; }); } };
 
 /* Cuplikin — halaman: Beranda, Pustaka Media, Transkrip + utilitas upload/unduh berpotongan. */
 'use strict';
@@ -2249,7 +2648,7 @@ Pages.team = {
         '<button class="btn" id="nws">' + ic('plus') + ' Workspace</button><button class="btn pri" id="inv">' + ic('users') + ' Undang anggota</button>') +
         '<div class="card pad0"><table class="tbl resp"><thead><tr><th>Nama</th><th>Peran</th><th>Status</th><th>Login terakhir</th><th></th></tr></thead><tbody>' + users.map(function (u) {
           var me = u.id === S.boot.user.id;
-          return '<tr><td data-l="Nama" class="tl"><div class="row"><span class="avatar">' + esc((u.name || u.email).slice(0, 2).toUpperCase()) + '</span><div><b>' + esc(u.name) + (me ? ' <span class="badge">Anda</span>' : '') + '</b><div class="xs dim">' + esc(u.email) + '</div></div></div></td>' +
+          return '<tr><td data-l="Nama" class="tl"><div class="row">' + avatarHtml(u, 36, true) + '<div><b>' + esc(u.name) + (me ? ' <span class="badge">Anda</span>' : '') + '</b><div class="xs dim">' + esc(u.email) + '</div></div></div></td>' +
             '<td data-l="Peran">' + (me || u.role === 'ORG_OWNER' ? '<span class="badge b-ac">' + esc(labels[u.role]) + '</span>' : '<select class="inp" data-role="' + u.id + '" style="min-height:32px;padding:4px 8px;width:auto">' + arrOpts(S.boot.ref.roles.filter(function (x) { return x !== 'SUPER_ADMIN' && (x !== 'ORG_OWNER' || S.boot.role === 'ORG_OWNER'); }), u.role, labels) + '</select>') + '</td>' +
             '<td data-l="Status">' + (u.active ? '<span class="badge b-ok">Aktif</span>' : '<span class="badge b-bad">Nonaktif</span>') + (u.mustChange ? ' <span class="badge b-warn">Sandi sementara</span>' : '') + '</td>' +
             '<td data-l="Login">' + (u.lastLogin ? ago(u.lastLogin) : '—') + '</td><td data-l="">' + (me || u.role === 'ORG_OWNER' ? '' : '<div class="row gap6"><button class="btn sm" data-act="' + u.id + '">' + (u.active ? 'Nonaktifkan' : 'Aktifkan') + '</button><button class="btn sm ghost" data-rp="' + u.id + '">Reset sandi</button><button class="btn sm ghost icon" data-del="' + u.id + '">' + ic('trash', 's') + '</button></div>') + '</td></tr>';
@@ -2258,6 +2657,7 @@ Pages.team = {
           return '<div class="card"><div class="row"><i style="width:14px;height:14px;border-radius:4px;background:' + esc(w.color) + '"></i><b class="grow">' + esc(w.name) + '</b>' + (can('organization.manage') ? '<button class="btn sm ghost" data-wed="' + w.id + '">Edit</button><button class="btn sm ghost icon" data-wdel="' + w.id + '">' + ic('trash', 's') + '</button>' : '') + '</div><p class="small muted">' + esc(w.description || '—') + '</p></div>';
         }).join('') + '</div>' +
         '<h3 class="mt16 mb12">Matriks izin peran</h3><div class="card pad0 tbl-wrap"><table class="tbl" style="font-size:12px"><thead><tr><th>Izin</th>' + S.boot.ref.roles.filter(function (x) { return x !== 'SUPER_ADMIN'; }).map(function (x) { return '<th>' + esc(labels[x]) + '</th>'; }).join('') + '</tr></thead><tbody>' + Pages.team.matrix() + '</tbody></table></div>';
+      bindAvatarZoom(el, users);
       $$('[data-role]').forEach(function (s) { s.onchange = function () { call('users.update', { id: s.dataset.role, role: s.value }).then(function () { toast('Peran diperbarui', 'ok'); }).catch(function (e) { errToast(e); render(); }); }; });
       $$('[data-act]').forEach(function (b) { act(b, function () { var u = users.filter(function (x) { return x.id === b.dataset.act; })[0]; return call('users.update', { id: u.id, active: !u.active }).then(render); }); });
       $$('[data-rp]').forEach(function (b) { act(b, function () { return call('users.resetPassword', { id: b.dataset.rp }).then(function (r2) { modal({ title: 'Kata sandi sementara', body: '<p class="small muted">Berikan secara aman kepada pengguna. Ia wajib menggantinya saat login.</p><div class="row"><code class="mono grow" style="font-size:16px">' + esc(r2.tempPassword) + '</code><button class="btn sm" onclick="copyText(\'' + esc(r2.tempPassword) + '\')">Salin</button></div>' }); }); }); });
@@ -2371,11 +2771,12 @@ Pages.settings = {
   },
   profile: function (box) {
     var u = S.boot.user, pr = u.prefs || {};
-    box.innerHTML = '<div class="grid g2"><div class="card"><div class="card-h"><h3>Profil & notifikasi</h3></div><form id="pf" class="col"><label class="f">Nama<input class="inp" name="name" value="' + esc(u.name) + '"></label>' +
+    box.innerHTML = profilePhotoCard() + '<div class="grid g2 mt16"><div class="card"><div class="card-h"><h3>Profil & notifikasi</h3></div><form id="pf" class="col"><label class="f">Nama<input class="inp" name="name" value="' + esc(u.name) + '"></label>' +
       '<label class="f">Tema<select class="inp" name="theme"><option value="dark"' + (pr.theme !== 'light' ? ' selected' : '') + '>Gelap</option><option value="light"' + (pr.theme === 'light' ? ' selected' : '') + '>Terang</option></select></label>' +
       '<label class="check"><input type="checkbox" name="notifEmail"' + (pr.notifEmail ? ' checked' : '') + '> Kirim notifikasi penting ke email</label><label class="check"><input type="checkbox" name="notifWa"' + (pr.notifWa ? ' checked' : '') + '> Kirim notifikasi ke WhatsApp (Fonnte)</label>' +
       '<label class="f">Nomor WhatsApp<input class="inp" name="waNumber" value="' + esc(pr.waNumber || '') + '" placeholder="62812xxxx"></label><div class="row"><button class="btn pri" type="submit">Simpan</button><button class="btn" type="button" id="tn">Uji notifikasi</button></div></form></div>' +
       '<div class="card"><div class="card-h"><h3>Ganti kata sandi</h3></div><form id="cp" class="col"><label class="f">Kata sandi lama<input class="inp" type="password" name="o" required></label><label class="f">Kata sandi baru<input class="inp" type="password" name="n" minlength="8" required></label><button class="btn" type="submit">Perbarui</button></form></div></div>';
+    bindProfilePhoto(box);
     $('#pf').onsubmit = function (e) {
       e.preventDefault(); var f = this;
       call('auth.prefs', { name: f.name.value, theme: f.theme.value, notifEmail: f.notifEmail.checked, notifWa: f.notifWa.checked, waNumber: f.waNumber.value }).then(function (nu) {
@@ -2396,13 +2797,19 @@ Pages.settings = {
       '<label class="f">Telegram chat ID (grup tim)<input class="inp" name="telegramChatId" value="' + esc(o.telegramChatId || '') + '"></label><span></span>' +
       '<label class="f">White-label: nama aplikasi' + (hasFeat('whitelabel') ? '' : ' 🔒') + '<input class="inp" name="whitelabelName" value="' + esc(o.whitelabelName || '') + '"' + (hasFeat('whitelabel') ? '' : ' disabled') + '></label>' +
       '<label class="f">White-label: warna aksen<input type="color" name="whitelabelColor" value="' + esc(o.whitelabelColor || '#6366f1') + '"' + (hasFeat('whitelabel') ? '' : ' disabled') + '></label>' +
-      '<div class="full"><button class="btn pri" type="submit">Simpan</button></div></form></div>';
+      '<div class="full mt8"><h3>Identitas legal (dipakai di S&K & Pemberitahuan Privasi)</h3><p class="xs dim" style="margin:4px 0 0">Organisasi Anda adalah <b>pengendali data</b> menurut UU PDP. Data ini tampil di dokumen legal yang dibaca pengguna.</p></div>' +
+      '<label class="f">Nama badan hukum / organisasi<input class="inp" name="legalName" value="' + esc(o.legalName || '') + '" placeholder="PT / CV / Yayasan …"></label>' +
+      '<label class="f">Email kontak privasi<input class="inp" type="email" name="legalEmail" value="' + esc(o.legalEmail || '') + '" placeholder="privasi@organisasi.id"></label>' +
+      '<label class="f full">Alamat<input class="inp" name="legalAddress" value="' + esc(o.legalAddress || '') + '"></label>' +
+      '<label class="f">Pejabat Pelindungan Data (opsional)<input class="inp" name="legalDpo" value="' + esc(o.legalDpo || '') + '"></label><label class="f">Telepon<input class="inp" name="legalPhone" value="' + esc(o.legalPhone || '') + '"></label>' +
+      '<div class="full row wrap"><button class="btn pri" type="submit">Simpan</button><a class="btn" href="#/terms">Pratinjau S&K</a><a class="btn" href="#/privacy">Pratinjau Privasi</a></div></form></div>';
     $('#of').onsubmit = function (e) {
       e.preventDefault(); var f = this, btn = $('button', f); busy(btn, true);
       var org = { name: f.name.value, timezone: f.timezone.value, reviewTiers: Number(f.reviewTiers.value), defaultHashtags: f.defaultHashtags.value, requireRights: f.requireRights.checked, allowUnapprovedPublish: f.allowUnapprovedPublish.checked,
-        defaultWebhook: f.defaultWebhook.value, telegramChatId: f.telegramChatId.value };
+        defaultWebhook: f.defaultWebhook.value, telegramChatId: f.telegramChatId.value,
+        legalName: f.legalName.value, legalEmail: f.legalEmail.value, legalAddress: f.legalAddress.value, legalDpo: f.legalDpo.value, legalPhone: f.legalPhone.value };
       if (hasFeat('whitelabel')) { org.whitelabelName = f.whitelabelName.value; org.whitelabelColor = f.whitelabelColor.value; }
-      call('settings.save', { org: org }).then(function () { busy(btn, false); toast('Pengaturan tersimpan', 'ok'); start(); }, function (er) { busy(btn, false); errToast(er); });
+      call('settings.save', { org: org }).then(function () { busy(btn, false); LegalUI.info = null; toast('Pengaturan tersimpan', 'ok'); start(); }, function (er) { busy(btn, false); errToast(er); });
     };
   },
   ai: function (box, s) {
