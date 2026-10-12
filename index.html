@@ -886,7 +886,7 @@ function renderChangePw() {
 
 /* Cuplikin — konten legal (Syarat & Ketentuan, Pemberitahuan Privasi) + halaman Tentang Aplikasi, foto profil & zoom. */
 'use strict';
-var CLIENT_VERSION = '2.1.0-gas';
+var CLIENT_VERSION = '2.2.0-gas';
 var CLIENT_BUILD = '2026-10-12';
 var LEGAL_VERSION_CLIENT = '2026-10-12';
 
@@ -2813,18 +2813,58 @@ Pages.settings = {
     };
   },
   ai: function (box, s) {
-    box.innerHTML = '<div class="grid g2"><div class="card"><div class="card-h"><h3>Gemini API (BYOK)</h3>' + (s.aiConfigured ? '<span class="badge b-ok">Terhubung</span>' : '<span class="badge b-warn">Belum diatur</span>') + '</div>' +
-      '<p class="small muted" style="margin-top:0">Buat API key di Google AI Studio. Key disimpan di Script Properties (server) dan tidak pernah dikirim ke browser. Perhatikan ketentuan Gemini API: data layanan gratis dapat dipakai Google untuk peningkatan model — gunakan akun berbayar untuk konten klien yang sensitif.</p>' +
-      '<form id="af" class="col"><label class="f">API key<input class="inp mono" name="GEMINI_API_KEY" value="' + esc(s.secrets.GEMINI_API_KEY) + '" placeholder="AIza…"></label>' +
-      '<label class="f">Model<input class="inp" name="model" list="models" value="' + esc(s.model) + '"><datalist id="models">' + s.models.map(function (m) { return '<option value="' + m + '">'; }).join('') + '</datalist></label>' +
-      '<div class="row"><button class="btn pri" type="submit">Simpan</button><button class="btn" type="button" id="tai">Uji koneksi</button></div></form></div>' +
-      '<div class="card"><div class="card-h"><h3>Notifikasi & webhook</h3></div><form id="nf" class="col"><label class="f">Token Fonnte (WhatsApp)<input class="inp mono" name="FONNTE_TOKEN" value="' + esc(s.secrets.FONNTE_TOKEN) + '"></label>' +
-      '<label class="f">Token bot Telegram<input class="inp mono" name="TELEGRAM_BOT_TOKEN" value="' + esc(s.secrets.TELEGRAM_BOT_TOKEN) + '"></label>' +
-      '<label class="f">Rahasia tanda tangan webhook (HMAC-SHA256)<input class="inp mono" name="WEBHOOK_SECRET" value="' + esc(s.secrets.WEBHOOK_SECRET) + '"></label><div class="xs dim">Header <span class="mono">X-Cuplikin-Signature</span> = HMAC-SHA256(body, rahasia).</div>' +
-      '<button class="btn pri" type="submit">Simpan</button></form></div></div>';
-    $('#af').onsubmit = function (e) { e.preventDefault(); var f = this; call('settings.save', { secrets: { GEMINI_API_KEY: f.GEMINI_API_KEY.value }, model: f.model.value }).then(function (r) { S.boot.aiConfigured = r.aiConfigured; toast('Tersimpan', 'ok'); render(); }).catch(errToast); };
-    act($('#tai'), function () { return call('settings.testAi').then(function (r) { toast((r.ok ? 'Berhasil' : 'Respon tak terduga') + ' · ' + r.model + ' · ' + r.ms + ' ms', r.ok ? 'ok' : 'warn'); }); });
-    $('#nf').onsubmit = function (e) { e.preventDefault(); var f = this; call('settings.save', { secrets: { FONNTE_TOKEN: f.FONNTE_TOKEN.value, TELEGRAM_BOT_TOKEN: f.TELEGRAM_BOT_TOKEN.value, WEBHOOK_SECRET: f.WEBHOOK_SECRET.value } }).then(function () { toast('Tersimpan', 'ok'); }).catch(errToast); };
+    var price = function (m) { return m.in === undefined ? '—' : '$' + m.in.toFixed(2) + ' / $' + m.out.toFixed(2) + (m.audio && m.audio !== m.in ? ' · audio $' + m.audio.toFixed(2) : ''); };
+    var opts = function (cur, extra) {
+      var list = s.catalog.slice(), ids = list.map(function (m) { return m.id; });
+      (extra || []).forEach(function (m) { if (ids.indexOf(m.id) < 0) { list.push({ id: m.id, label: m.label, status: 'Dari API', tier: '' }); ids.push(m.id); } });
+      if (cur && ids.indexOf(cur) < 0) list.push({ id: cur, label: cur, status: 'Kustom' });
+      var grp = { flash: 'Flash', lite: 'Flash-Lite', pro: 'Pro', '': 'Lainnya' };
+      return Object.keys(grp).map(function (g) {
+        var items = list.filter(function (m) { return (m.tier || '') === g; });
+        return items.length ? '<optgroup label="' + grp[g] + '">' + items.map(function (m) { return '<option value="' + esc(m.id) + '"' + (m.id === cur ? ' selected' : '') + '>' + esc(m.label) + ' — ' + esc(m.status) + (m.legacy25 ? ' (akun lama)' : '') + '</option>'; }).join('') + '</optgroup>' : '';
+      }).join('');
+    };
+    var info = function (id) {
+      var m = s.catalog.filter(function (x) { return x.id === id; })[0];
+      if (!m) return '<span class="xs dim">Model di luar katalog — harga & tingkat penalaran mengikuti dokumentasi Google.</span>';
+      return '<div class="xs muted mt8"><b>' + esc(m.label) + '</b> · <span class="mono">' + esc(m.id) + '</span><br>Harga input/output per 1 jt token: ' + price(m) + '<br>' + esc(m.note || '') + (m.levels && m.levels.length ? '<br>Tingkat penalaran: ' + m.levels.join(', ') : '') + '</div>' +
+        (m.legacy25 ? '<div class="banner warn xs mt8">Seri 2.5 hanya tersedia untuk akun yang sudah pernah memakainya. Untuk klien baru gunakan seri 3.x.</div>' : '');
+    };
+    var render2 = function (extra) {
+      box.innerHTML = '<div class="grid g2"><div class="card"><div class="card-h"><h3>Gemini API (BYOK)</h3>' + (s.aiConfigured ? '<span class="badge b-ok">Terhubung</span>' : '<span class="badge b-warn">Belum diatur</span>') + '</div>' +
+        '<p class="small muted" style="margin-top:0">Buat API key di Google AI Studio. Key disimpan di Script Properties (server) dan tidak pernah dikirim ke browser. Data pada layanan Gemini <b>gratis</b> dapat dipakai Google untuk peningkatan produk — gunakan akun berbayar untuk konten klien yang sensitif.</p>' +
+        '<form id="af" class="col"><label class="f">API key<input class="inp mono" name="GEMINI_API_KEY" value="' + esc(s.secrets.GEMINI_API_KEY) + '" placeholder="AIza…"></label>' +
+        '<label class="f">Model analisis teks <span class="xs dim">(deteksi klip, copywriting, insight, repurpose)</span><select class="inp" name="model">' + opts(s.model, extra) + '</select></label><div id="mi1">' + info(s.model) + '</div>' +
+        '<label class="f">Model media <span class="xs dim">(transkripsi audio/video & terjemahan subtitle — volume token besar)</span><select class="inp" name="modelMedia">' + opts(s.modelMedia, extra) + '</select></label><div id="mi2">' + info(s.modelMedia) + '</div>' +
+        '<details class="small"><summary style="cursor:pointer" class="muted">Model lain (ketik manual)</summary><input class="inp mono mt8" name="custom" placeholder="mis. gemini-4.0-flash"><div class="xs dim mt8">Diisi → dipakai sebagai model analisis teks.</div></details>' +
+        '<div class="row wrap"><button class="btn pri" type="submit">Simpan</button><button class="btn" type="button" id="tai">' + ic('zap', 's') + ' Uji koneksi</button><button class="btn" type="button" id="lmd"' + (s.aiConfigured ? '' : ' disabled') + '>' + ic('refresh', 's') + ' Muat dari API</button><button class="btn ghost" type="button" id="rec">Pakai rekomendasi</button></div></form>' +
+        '<div id="taiOut"></div></div>' +
+        '<div class="card"><div class="card-h"><h3>Notifikasi & webhook</h3></div><form id="nf" class="col"><label class="f">Token Fonnte (WhatsApp)<input class="inp mono" name="FONNTE_TOKEN" value="' + esc(s.secrets.FONNTE_TOKEN) + '"></label>' +
+        '<label class="f">Token bot Telegram<input class="inp mono" name="TELEGRAM_BOT_TOKEN" value="' + esc(s.secrets.TELEGRAM_BOT_TOKEN) + '"></label>' +
+        '<label class="f">Rahasia tanda tangan webhook (HMAC-SHA256)<input class="inp mono" name="WEBHOOK_SECRET" value="' + esc(s.secrets.WEBHOOK_SECRET) + '"></label><div class="xs dim">Header <span class="mono">X-Cuplikin-Signature</span> = HMAC-SHA256(body, rahasia).</div>' +
+        '<button class="btn pri" type="submit">Simpan</button></form></div></div>' +
+        '<div class="card pad0 mt16"><div class="card-h" style="padding:16px 16px 0"><h3>Katalog model Gemini</h3><span class="xs dim">harga tier berbayar, USD / 1 jt token · Okt 2026</span></div><div class="tbl-wrap"><table class="tbl resp"><thead><tr><th>Model</th><th>Status</th><th>Input / Output</th><th>Cocok untuk</th></tr></thead><tbody>' +
+        s.catalog.map(function (m) { return '<tr><td data-l="Model" class="tl"><b>' + esc(m.label) + '</b><div class="xs mono dim">' + esc(m.id) + '</div></td><td data-l="Status"><span class="badge ' + (/terbaru|rekomendasi/i.test(m.status) ? 'b-ok' : m.legacy25 ? 'b-warn' : /Preview/.test(m.status) ? 'b-info' : '') + '">' + esc(m.status) + '</span></td><td data-l="Harga" class="mono small">' + price(m) + '</td><td data-l="Untuk" class="small tl">' + esc(m.best || m.note || '') + '</td></tr>'; }).join('') +
+        '</tbody></table></div><p class="xs dim" style="padding:0 16px 12px">Perkiraan biaya transkripsi 1 jam: podcast audio ±Rp 1.700 · video ±Rp 6.000 (Gemini 3.5 Flash-Lite). Harga dapat berubah — cek ai.google.dev/gemini-api/docs/pricing.</p></div>';
+      var f = $('#af');
+      f.model.onchange = function () { $('#mi1').innerHTML = info(this.value); };
+      f.modelMedia.onchange = function () { $('#mi2').innerHTML = info(this.value); };
+      $('#rec').onclick = function () { f.model.value = s.defaults.text; f.modelMedia.value = s.defaults.media; f.model.onchange.call(f.model); f.modelMedia.onchange.call(f.modelMedia); toast('Rekomendasi: ' + s.defaults.text + ' + ' + s.defaults.media + ' — klik Simpan', ''); };
+      f.onsubmit = function (e) {
+        e.preventDefault();
+        var model = f.custom.value.trim() || f.model.value;
+        if (f.custom.value.trim() && !/^gemini-[a-z0-9.\-]{2,60}$/.test(model)) return toast('Nama model harus diawali "gemini-"', 'warn');
+        call('settings.save', { secrets: { GEMINI_API_KEY: f.GEMINI_API_KEY.value }, model: model, modelMedia: f.modelMedia.value }).then(function (r) { S.boot.aiConfigured = r.aiConfigured; s = r; toast('Tersimpan · ' + r.model + ' / ' + r.modelMedia, 'ok'); render2(extra); }).catch(errToast);
+      };
+      act($('#tai'), function () {
+        return call('settings.testAi').then(function (r) {
+          $('#taiOut').innerHTML = '<div class="col gap6 mt12">' + r.results.map(function (x) { return '<div class="banner ' + (x.ok ? '' : 'bad') + ' small" style="margin:0">' + ic(x.ok ? 'checkc' : 'x') + '<div class="grow"><b>' + (x.kind === 'media' ? 'Media' : 'Teks') + '</b> · <span class="mono">' + esc(x.model) + '</span> · ' + x.ms + ' ms' + (x.error ? '<div>' + esc(x.error) + '</div>' : '') + '</div></div>'; }).join('') + '</div>';
+        });
+      });
+      act($('#lmd'), function () { return call('settings.listModels').then(function (list) { toast(list.length + ' model tersedia untuk API key ini', 'ok'); render2(list); var nw = list.filter(function (m) { return !m.known; }); if (nw.length) toast('Model baru di luar katalog: ' + nw.map(function (m) { return m.id; }).join(', '), '', 8000); }); });
+      $('#nf').onsubmit = function (e) { e.preventDefault(); var g = this; call('settings.save', { secrets: { FONNTE_TOKEN: g.FONNTE_TOKEN.value, TELEGRAM_BOT_TOKEN: g.TELEGRAM_BOT_TOKEN.value, WEBHOOK_SECRET: g.WEBHOOK_SECRET.value } }).then(function () { toast('Tersimpan', 'ok'); }).catch(errToast); };
+    };
+    render2();
   },
   app: function (box) {
     var url = ls('cf_api_url') || (CF_API_URL.indexOf('__API') === 0 ? '' : CF_API_URL);
