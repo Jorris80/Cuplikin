@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#09090b">
+<title>Offline · Cuplikin</title>
+<style>
+  :root{color-scheme:dark}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;min-height:100dvh;display:grid;place-items:center;padding:24px;background:radial-gradient(800px 400px at 10% -10%,rgba(99,102,241,.25),transparent),#09090b;color:#f4f4f5;font:15px/1.6 Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;text-align:center}
+  .card{max-width:420px;width:100%;background:#141418;border:1px solid #27272f;border-radius:22px;padding:30px}
+  .logo{width:60px;height:60px;border-radius:18px;margin:0 auto 16px;background:linear-gradient(135deg,#6366f1,#a855f7);display:grid;place-items:center}
+  h1{font-size:20px;margin:0 0 8px}p{color:#a1a1aa;margin:0 0 18px}
+  button{min-height:44px;padding:0 20px;border:0;border-radius:12px;background:linear-gradient(135deg,#6366f1,#7c3aed);color:#fff;font:600 15px Inter,system-ui,sans-serif;cursor:pointer}
+  ul{text-align:left;color:#a1a1aa;font-size:13px;padding-left:18px;margin:18px 0 0}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4L8.1 15.9M14.5 14.5L20 20M8.1 8.1L12 12"/></svg></div>
+  <h1>Anda sedang offline</h1>
+  <p>Cuplikin belum tersimpan di perangkat ini. Buka aplikasi sekali saat online agar mode offline aktif.</p>
+  <button onclick="location.href='./index.html'">Coba lagi</button>
+  <ul>
+    <li>Setelah dibuka sekali, data yang pernah dilihat tetap tersedia offline.</li>
+    <li>Edit transkrip, klip, copy, komentar & metrik akan disinkronkan otomatis saat online.</li>
+  </ul>
+</div>
+<script>window.addEventListener('online', function () { location.href = './index.html'; });</script>
+</body>
+</html>
