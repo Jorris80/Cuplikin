@@ -5,7 +5,7 @@
  * - Permintaan API (script.google.com / googleusercontent) TIDAK di-cache di sini;
  *   data offline & antrean sinkron ditangani aplikasi via IndexedDB.
  */
-var VERSION = 'cuplikin-v2.2.0';
+var VERSION = 'cuplikin-v2.3.0';
 var SHELL = ['./', './index.html', './manifest.json', './offline.html'];
 var FONT_CACHE = 'cuplikin-fonts-v1';
 

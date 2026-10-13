@@ -886,7 +886,7 @@ function renderChangePw() {
 
 /* Cuplikin — konten legal (Syarat & Ketentuan, Pemberitahuan Privasi) + halaman Tentang Aplikasi, foto profil & zoom. */
 'use strict';
-var CLIENT_VERSION = '2.2.0-gas';
+var CLIENT_VERSION = '2.3.0-gas';
 var CLIENT_BUILD = '2026-10-12';
 var LEGAL_VERSION_CLIENT = '2026-10-12';
 
@@ -985,7 +985,7 @@ var LEGAL_PRIVACY = [
   '- **Notifikasi** (email, WhatsApp, Telegram) — persetujuan Anda melalui pengaturan profil; dapat dimatikan kapan saja.',
   '- **Analitik konten** — kepentingan sah Pengelola untuk mengukur kinerja konten; tidak dipakai untuk profil perilaku pribadi.',
   '## 4. Pemrosesan dengan AI',
-  '- Bila diaktifkan Pengelola, file media dan transkrip dikirim ke **Google Gemini API** untuk transkripsi, deteksi momen, copywriting, terjemahan, dan ringkasan. Menurut ketentuan Google, data pada **layanan Gemini gratis dapat digunakan untuk meningkatkan produk Google**, sedangkan data pada layanan berbayar tidak. Pengelola disarankan memakai layanan berbayar untuk konten rahasia.',
+  '- Bila diaktifkan Pengelola, file media dan transkrip dikirim ke **Google Gemini API** untuk transkripsi, deteksi momen, copywriting, terjemahan, dan ringkasan. Untuk video YouTube publik, yang dikirim hanya **tautan videonya**; Gemini membacanya langsung dari YouTube. Menurut ketentuan Google, data pada **layanan Gemini gratis dapat digunakan untuk meningkatkan produk Google**, sedangkan data pada layanan berbayar tidak. Pengelola disarankan memakai layanan berbayar untuk konten rahasia.',
   '- Skor potensi viral menilai **konten**, bukan orang. Tidak ada keputusan otomatis yang menimbulkan akibat hukum atau berdampak signifikan terhadap diri Anda.',
   '## 5. Penerima data',
   '- Anggota tim di organisasi yang sama sesuai peran dan akses workspace.',
@@ -1448,13 +1448,26 @@ Pages.media = {
   },
 
   importLink: function (reload) {
-    modal({ title: 'Impor dari Google Drive / tautan', body: '<form id="if" class="fgrid"><label class="f full">URL file Google Drive atau tautan video<input class="inp" name="url" required placeholder="https://drive.google.com/file/d/…  atau  https://youtube.com/…"></label>' +
-      '<div class="full banner small">' + ic('info') + '<div class="grow">File <b>Google Drive</b> dapat ditranskripsi AI (harus dapat diakses akun pemilik aplikasi). Tautan platform lain (YouTube, dll.) hanya disimpan sebagai referensi — aplikasi <b>tidak mengunduh</b> video pihak ketiga; impor transkripnya (SRT/VTT/TXT).</div></div>' +
-      '<label class="f">Judul (opsional)<input class="inp" name="title"></label><label class="f">Durasi (detik, opsional)<input class="inp" name="durationSec" type="number" min="0"></label>' + rightsFields() + '</form>',
+    modal({ title: 'Impor dari Google Drive / YouTube / tautan', body: '<form id="if" class="fgrid"><label class="f full">URL file Google Drive, video YouTube, atau tautan lain<input class="inp" name="url" required placeholder="https://drive.google.com/file/d/…  atau  https://youtu.be/…"></label>' +
+      '<div class="full banner small" id="ifHint">' + ic('info') + '<div class="grow">File <b>Google Drive</b> dan video <b>YouTube publik</b> dapat ditranskripsi AI. YouTube dibaca langsung oleh Gemini dari URL — aplikasi <b>tidak mengunduh</b> videonya. Tautan platform lain hanya disimpan sebagai referensi; impor transkripnya (SRT/VTT/TXT).</div></div>' +
+      '<label class="f">Judul (opsional)<input class="inp" name="title"></label><label class="f">Durasi (detik atau j:mm:dd)<input class="inp" name="durationSec" inputmode="numeric" placeholder="mis. 1:02:30"></label>' +
+      '<label class="check full" id="ifAiWrap" style="display:none"><input type="checkbox" name="autoAi"> Langsung transkripsi AI dari YouTube setelah impor (durasi wajib diisi)</label>' + rightsFields() + '</form>',
+      onOpen: function (el) {
+        var f = $('#if', el);
+        f.url.addEventListener('input', function () { $('#ifAiWrap', el).style.display = ytId(f.url.value) ? '' : 'none'; });
+      },
       foot: [{ label: 'Batal', cls: 'ghost' }, { label: 'Impor', cls: 'pri', onClick: function (close, el) {
         var f = $('#if', el);
-        return call('media.import', { url: f.url.value, title: f.title.value, durationSec: f.durationSec.value, rights: f.rights.value, rightsOwner: f.rightsOwner.value, rightsRef: f.rightsRef.value, consent: f.consent.checked, wsId: S.wsId })
-          .then(function (m) { toast('Diimpor: ' + m.title, 'ok'); close(); reload && reload(); });
+        var dur = parseDur(f.durationSec.value);
+        if (dur === null) return Promise.reject(new Error('Format durasi tidak valid. Contoh: 754 atau 12:34 atau 1:02:30.'));
+        var auto = ytId(f.url.value) && f.autoAi.checked;
+        if (auto && !dur) return Promise.reject(new Error('Isi durasi video untuk transkripsi AI dari YouTube.'));
+        if (auto && !hasFeat('ai')) return Promise.reject(new Error('Transkripsi AI butuh paket Starter ke atas.'));
+        return call('media.import', { url: f.url.value, title: f.title.value, durationSec: dur, rights: f.rights.value, rightsOwner: f.rightsOwner.value, rightsRef: f.rightsRef.value, consent: f.consent.checked, wsId: S.wsId })
+          .then(function (m) {
+            toast('Diimpor: ' + m.title, 'ok'); close(); reload && reload();
+            if (auto) return Pages.media.runPipeline(m, ['transcribe'], reload);
+          });
       } }] });
   },
 
@@ -1469,25 +1482,34 @@ Pages.media = {
         (m.url ? '<a class="btn sm" target="_blank" rel="noopener" href="' + esc(m.url) + '">' + ic('ext') + ' Buka di ' + (m.source === 'URL' ? 'sumber' : 'Drive') + '</a>' : '') +
         (m.statusMsg ? '<div class="banner warn small">' + esc(m.statusMsg) + '</div>' : '') +
         '<div class="row wrap">' +
-        (m.fileId && can('clip.create') ? '<button class="btn pri" id="aiTr">' + ic('cpu') + ' Transkripsi AI' + (hasFeat('ai') ? '' : ' 🔒') + '</button>' : '') +
+        ((m.fileId || ytId(m.url)) && can('clip.create') ? '<button class="btn pri" id="aiTr">' + ic('cpu') + (m.fileId ? ' Transkripsi AI' : ' Transkripsi AI dari YouTube') + (hasFeat('ai') ? '' : ' 🔒') + '</button>' : '') +
         (can('media.upload') ? '<button class="btn" id="impTr">' + ic('text') + ' Impor transkrip</button>' : '') +
         (tr ? '<a class="btn" href="#/transcript?media=' + m.id + '">' + ic('text') + ' Buka transkrip</a><a class="btn" href="#/clips?media=' + m.id + '&gen=1">' + ic('scissors') + ' Buat klip</a>' : '') +
         '</div></div>' +
         '<form id="mf" class="fgrid"><label class="f full">Judul<input class="inp" name="title" value="' + esc(m.title) + '"></label>' +
-        '<label class="f">Bahasa<select class="inp" name="language">' + selectOpts(S.boot.ref.languages, m.language) + '</select></label><label class="f">Durasi (detik)<input class="inp" name="durationSec" type="number" value="' + (m.durationSec || '') + '"></label>' +
+        '<label class="f">Bahasa<select class="inp" name="language">' + selectOpts(S.boot.ref.languages, m.language) + '</select></label><label class="f">Durasi (detik atau j:mm:dd)<input class="inp" name="durationSec" inputmode="numeric" placeholder="mis. 1:02:30" value="' + (m.durationSec ? fmtDurIn(m.durationSec) : '') + '"></label>' +
         rightsFields(m) + '<label class="f full">Tag<input class="inp" name="tags" value="' + esc((m.tags || []).join(', ')) + '"></label><label class="f full">Catatan<textarea class="inp" name="notes">' + esc(m.notes) + '</textarea></label></form></div>',
         foot: [].concat(can('media.delete') ? [{ label: ic('trash') + ' Hapus', cls: 'bad', onClick: function (close) {
           return confirmBox('Hapus media?', 'Transkrip, subtitle & konten turunan ikut terhapus. Klip tetap ada kecuali Anda memilih hapus beserta klip.', 'Hapus', true).then(function (ok) {
             if (!ok) return; return call('media.delete', { id: m.id, trashFile: true, cascadeClips: true }).then(function () { toast('Media dihapus', 'ok'); close(); reload && reload(); });
           });
         } }] : []).concat(can('media.upload') ? [{ label: 'Simpan', cls: 'pri', onClick: function (close, el) {
-          var f = $('#mf', el);
-          return call('media.update', { id: m.id, title: f.title.value, language: f.language.value, durationSec: f.durationSec.value, rights: f.rights.value, rightsOwner: f.rightsOwner.value,
+          var f = $('#mf', el), dur = parseDur(f.durationSec.value);
+          if (dur === null) return Promise.reject(new Error('Format durasi tidak valid. Contoh: 754 atau 12:34 atau 1:02:30.'));
+          return call('media.update', { id: m.id, title: f.title.value, language: f.language.value, durationSec: dur, rights: f.rights.value, rightsOwner: f.rightsOwner.value,
             rightsRef: f.rightsRef.value, consent: f.consent.checked, tags: f.tags.value.split(',').map(function (t) { return t.trim(); }).filter(Boolean), notes: f.notes.value })
             .then(function () { toast('Tersimpan', 'ok'); close(); reload && reload(); });
         } }] : []) });
       if ($('#aiTr', md.el)) $('#aiTr', md.el).onclick = function () {
         if (!hasFeat('ai')) return toast('Transkripsi AI butuh paket Starter ke atas.', 'warn');
+        if (!m.fileId) {
+          var d = parseDur($('#mf', md.el).durationSec.value);
+          if (!d) return toast('Isi durasi video YouTube (mis. 1:02:30) lalu tekan Simpan, kemudian jalankan transkripsi.', 'warn');
+          if (d !== m.durationSec) return toast('Durasi berubah — tekan Simpan dulu, lalu jalankan transkripsi.', 'warn');
+          return confirmBox('Transkripsi dari YouTube?', 'Gemini akan membaca video langsung dari YouTube (khusus video Publik). Video ' + fmtT(d) + ' diproses per 20 menit di latar belakang. Fitur YouTube di Gemini masih pratinjau; akun gratis dibatasi ±8 jam video/hari.', 'Mulai').then(function (ok) {
+            if (!ok) return; md.close(); Pages.media.runPipeline(m, ['transcribe'], reload);
+          });
+        }
         md.close(); Pages.media.runPipeline(m, ['transcribe'], reload);
       };
       if ($('#impTr', md.el)) $('#impTr', md.el).onclick = function () { md.close(); Pages.media.importTranscript(m, reload); };
@@ -1496,6 +1518,8 @@ Pages.media = {
 
   importTranscript: function (m, reload) {
     modal({ title: 'Impor transkrip — ' + m.title, body: '<div class="col"><p class="small muted" style="margin:0">Format: <b>SRT</b>, <b>WebVTT</b>, teks bertimestamp <span class="mono">[00:12] Nama: teks</span>, atau teks polos (waktu diestimasi dari durasi media).</p>' +
+      (ytId(m.url) ? '<details class="small"><summary><b>Cara menyalin transkrip dari YouTube</b></summary><ol style="margin:6px 0;padding-left:18px"><li><b>Video milik sendiri:</b> YouTube Studio → Konten → pilih video → Subtitel → ⋮ → Download (.srt/.vtt), lalu pilih filenya di bawah.</li>' +
+        '<li><b>Video lain:</b> buka video di browser komputer → di bawah deskripsi klik <b>Tampilkan transkrip</b> → blok semua teks di panel → salin → tempel di kotak bawah. Label "4 detik", [Musik], dll. dibersihkan otomatis.</li></ol></details>' : '') +
       '<input type="file" class="inp" id="tf" accept=".srt,.vtt,.txt,text/plain"><textarea class="inp" id="tt" rows="10" placeholder="…atau tempel teks transkrip di sini"></textarea></div>',
       onOpen: function (el) { $('#tf', el).onchange = function () { var f = this.files[0]; if (!f) return; var r = new FileReader(); r.onload = function () { $('#tt', el).value = r.result; }; r.readAsText(f); }; },
       foot: [{ label: 'Batal', cls: 'ghost' }, { label: 'Impor', cls: 'pri', onClick: function (close, el) {
@@ -1514,6 +1538,20 @@ Pages.media = {
     }).catch(errToast);
   }
 };
+/** ID video YouTube dari tautan (watch, youtu.be, shorts, live, embed); '' bila bukan YouTube. */
+function ytId(url) {
+  var m = String(url || '').trim().match(/^https?:\/\/(?:www\.|m\.|music\.)?(?:youtube\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|live\/|embed\/|v\/)|youtu\.be\/)([A-Za-z0-9_-]{11})(?![A-Za-z0-9_-])/i);
+  return m ? m[1] : '';
+}
+/** "754" | "12:34" | "1:02:30" → detik; '' → 0; tidak valid → null. */
+function parseDur(v) {
+  v = String(v == null ? '' : v).trim().replace(',', '.');
+  if (!v) return 0;
+  if (/^\d+(\.\d+)?$/.test(v)) return Number(v);
+  if (!/^\d{1,3}(:\d{1,2}){1,2}(\.\d+)?$/.test(v)) return null;
+  return v.split(':').reduce(function (a, x) { return a * 60 + Number(x); }, 0);
+}
+function fmtDurIn(sec) { sec = Math.round(sec); var h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60; return (h ? h + ':' + (m < 10 ? '0' : '') : '') + m + ':' + (s < 10 ? '0' : '') + s; }
 function guessMime(name) {
   var ext = (name.split('.').pop() || '').toLowerCase();
   return { mp4: 'video/mp4', mov: 'video/quicktime', mkv: 'video/x-matroska', webm: 'video/webm', mp3: 'audio/mpeg', wav: 'audio/wav', m4a: 'audio/x-m4a', aac: 'audio/aac', ogg: 'audio/ogg' }[ext] || 'application/octet-stream';
